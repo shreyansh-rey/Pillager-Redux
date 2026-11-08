@@ -1,0 +1,13 @@
+{
+  "itemGroup.pillagerredux": "Example Mod Tab",
+  "block.pillagerredux.example_block": "Example Block",
+  "item.pillagerredux.example_item": "Example Item",
+
+  "pillagerredux.configuration.title": "Pillager Redux Configs",
+  "pillagerredux.configuration.section.pillagerredux.common.toml": "Pillager Redux Configs",
+  "pillagerredux.configuration.section.pillagerredux.common.toml.title": "Pillager Redux Configs",
+  "pillagerredux.configuration.items": "Item List",
+  "pillagerredux.configuration.logDirtBlock": "Log Dirt Block",
+  "pillagerredux.configuration.magicNumberIntroduction": "Magic Number Text",
+  "pillagerredux.configuration.magicNumber": "Magic Number"
+}
