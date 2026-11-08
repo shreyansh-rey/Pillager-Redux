@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "projectpillagers",
+  "version": "${version}",
+  "name": "ProjectPillagers",
+  "description": "",
+  "authors": [],
+  "contact": {},
+  "license": "All-Rights-Reserved",
+  "icon": "assets/projectpillagers/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "fabric-datagen": [
+      "com.yan.projectpillagers.client.ProjectpillagersDataGenerator"
+    ],
+    "client": [
+      "com.yan.projectpillagers.client.ProjectpillagersClient"
+    ],
+    "main": [
+      "com.yan.projectpillagers.Projectpillagers"
+    ]
+  },
+  "mixins": [
+    "projectpillagers.mixins.json",
+    {
+      "config": "projectpillagers.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric-api": "*",
+    "minecraft": "${minecraft_version}"
+  }
+}
