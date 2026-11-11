@@ -30,6 +30,8 @@ public class Outpost {
     int waveTotal;
     UUID captainId;
     final Set<UUID> wavePillagers = new HashSet<>();
+    final Set<UUID> builders = new HashSet<>();
+    final Set<UUID> escapees = new HashSet<>();
 
     boolean rebuilding;
     Deque<BuilderBlock> rebuildQueue;
@@ -43,6 +45,12 @@ public class Outpost {
 
     long constructionQueueDate;
 
+    int waveDelayDays = 3;
+
+    int escalation;
+
+    boolean concluding;
+
     public Outpost(ChunkPos chunkPos) {
         this(chunkPos, (Mod.day == -1L) ? 0L : Mod.day);
     }
@@ -53,6 +61,7 @@ public class Outpost {
         this.uuid = WorldData.Outpost.getOutpostUniqueID(chunkPos);
         this.built = false;
     }
+
 
     public void RegisterBuilderBlock(BuilderBlock builderBlock){
         if (builderBlock == null) return;
@@ -67,6 +76,7 @@ public class Outpost {
     public int getBuilderBlockCount() {
         return builderBlocks.size();
     }
+
 
     public boolean isWaveDue() {
         return waveDue;
@@ -156,15 +166,58 @@ public class Outpost {
         rebuildQueue = null;
         rebuildTarget = null;
         wavePillagers.clear();
+        builders.clear();
         waveTotal = 0;
         waveActive = false;
         waveStartDay = -1L;
     }
 
-    public void setCrew(Collection<UUID> ids) {
+    public void trackSoldiers(Collection<UUID> ids) {
         wavePillagers.clear();
         wavePillagers.addAll(ids);
         waveTotal = ids.size();
+    }
+
+    public void setBuilders(Collection<UUID> ids) {
+        builders.clear();
+        builders.addAll(ids);
+    }
+
+    public void setEscapees(Collection<UUID> ids) {
+        escapees.clear();
+        escapees.addAll(ids);
+    }
+
+    public void clearEscapees() {
+        escapees.clear();
+    }
+
+    public boolean isEscapee(UUID id) {
+        return escapees.contains(id);
+    }
+
+    public void removeEscapee(UUID id) {
+        escapees.remove(id);
+    }
+
+    public int getEscapeeCount() {
+        return escapees.size();
+    }
+
+    public Set<UUID> getBuilderIds() {
+        return Set.copyOf(builders);
+    }
+
+    public boolean isBuilder(UUID id) {
+        return builders.contains(id);
+    }
+
+    public void removeBuilder(UUID id) {
+        builders.remove(id);
+    }
+
+    public int getBuilderCount() {
+        return builders.size();
     }
 
     public BuilderBlock getRebuildTarget() {
@@ -200,6 +253,7 @@ public class Outpost {
         return rebuildQueue;
     }
 
+
     public SavedData.OutpostEntry toEntry() {
         List<SavedData.BlockEntry> blocks = new ArrayList<>(builderBlocks.size());
         for (BuilderBlock b : builderBlocks) {
@@ -207,21 +261,26 @@ public class Outpost {
         }
 
         return new SavedData.OutpostEntry(
-                chunkPos.x(), chunkPos.z(), constructionQueueDate,
-                waveDue, waveActive, waveStartDay, waveTotal, rebuilding,
-                new ArrayList<>(wavePillagers), Optional.ofNullable(captainId), blocks
+                chunkPos.x(), chunkPos.z(), constructionQueueDate, waveDelayDays,
+                waveDue, waveActive, waveStartDay, waveTotal, escalation, rebuilding,
+                new ArrayList<>(wavePillagers), new ArrayList<>(builders), new ArrayList<>(escapees),
+                Optional.ofNullable(captainId), blocks
         );
     }
 
     public static Outpost fromEntry(SavedData.OutpostEntry entry) {
         Outpost outpost = new Outpost(new ChunkPos(entry.x(), entry.z()), entry.queueDate());
 
+        outpost.waveDelayDays = entry.waveDelay();
+        outpost.escalation = entry.escalation();
         outpost.waveDue = entry.waveDue();
         outpost.waveActive = entry.waveActive();
         outpost.waveStartDay = entry.waveStartDay();
         outpost.waveTotal = entry.waveTotal();
         outpost.rebuilding = entry.rebuilding();
         outpost.wavePillagers.addAll(entry.wavePillagers());
+        outpost.builders.addAll(entry.builders());
+        outpost.escapees.addAll(entry.escapees());
         outpost.captainId = entry.captain().orElse(null);
 
         for (SavedData.BlockEntry b : entry.blocks()) {
@@ -229,6 +288,35 @@ public class Outpost {
         }
 
         return outpost;
+    }
+
+
+    public int getWaveDelayDays() {
+        return waveDelayDays;
+    }
+
+    public void setWaveDelayDays(int waveDelayDays) {
+        this.waveDelayDays = waveDelayDays;
+    }
+
+    public int getEscalation() {
+        return escalation;
+    }
+
+    public void addEscalation() {
+        escalation++;
+    }
+
+    public void clearEscalation() {
+        escalation = 0;
+    }
+
+    public boolean isConcluding() {
+        return concluding;
+    }
+
+    public void setConcluding(boolean concluding) {
+        this.concluding = concluding;
     }
 
     public long getConstructionQueueDate() {

@@ -13,6 +13,7 @@ import net.minecraft.world.clock.WorldClocks;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.item.PrimedTnt;
 import net.minecraft.world.entity.monster.illager.Pillager;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.ChunkPos;
@@ -25,6 +26,7 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.level.BlockEvent.EntityPlaceEvent;
+import net.neoforged.neoforge.event.level.ExplosionEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.tick.LevelTickEvent;
@@ -35,7 +37,6 @@ import java.util.UUID;
 
 @EventBusSubscriber(modid= PillagerRedux.MODID)
 public class ReduxMain {
-    private static final long pillagerWaveAttackTimeDays = 1L;
     private static final double pillagerWaveSpawnRadius = 64.0;
     private static final int waveCheckIntervalTicks = 20;
 
@@ -47,9 +48,9 @@ public class ReduxMain {
 
     private static final long waveExpireDays = 2L;
 
-
     @SubscribeEvent
     public static void onServerStarted(ServerStartedEvent event) {
+        Achievements.verify(event.getServer());
         Mod.restoreScheduledOutposts(event.getServer().overworld());
     }
 
@@ -71,6 +72,8 @@ public class ReduxMain {
             ChunkPos outpostChunk = WorldData.Outpost.getOutpostChunk(level, pos);
 
             if (outpostChunk == null) return;
+            awardBeGone(level, event, pos);
+
             if (WorldData.Outpost.isOutpostBurnt(level, outpostChunk)) return;
 
             Debug.Log("Outpost set on fire at " + pos.toShortString() + " chunk " + outpostChunk);
@@ -79,12 +82,39 @@ public class ReduxMain {
 
             Mod.markOutpostBurnt(level, outpostChunk);
             Mod.scheduleOutpostForConstruction(level, outpost);
+        }
+    }
 
-            if (event.getEntity() instanceof ServerPlayer placer) {
-                Achievements.award(level, placer, Achievements.BE_GONE);
-            } else {
-                Achievements.awardNear(level, pos.getX(), pos.getZ(), 64.0, Achievements.BE_GONE);
-            }
+    @SubscribeEvent
+    public static void onExplosion(ExplosionEvent.Detonate event) {
+        if (!(event.getLevel() instanceof ServerLevel level)) return;
+
+        Entity source = event.getExplosion().getDirectSourceEntity();
+        if (!(source instanceof PrimedTnt tnt)) return;
+
+        BlockPos pos = tnt.blockPosition();
+        if (!WorldData.Outpost.isInsideOutpostTower(level, pos)) return;
+
+        ChunkPos outpostChunk = WorldData.Outpost.getOutpostChunk(level, pos);
+        if (outpostChunk == null) return;
+
+        Achievements.awardNear(level, pos.getX(), pos.getZ(), 64.0, Achievements.BE_GONE);
+
+        if (WorldData.Outpost.isOutpostBurnt(level, outpostChunk)) return;
+
+        Debug.Log("Outpost blown up by TNT at " + pos.toShortString() + " chunk " + outpostChunk);
+
+        StructureStart outpost = WorldData.Outpost.getOutpostAt(level, pos);
+
+        Mod.markOutpostBurnt(level, outpostChunk);
+        Mod.scheduleOutpostForConstruction(level, outpost);
+    }
+
+    private static void awardBeGone(ServerLevel level, EntityPlaceEvent event, BlockPos pos) {
+        if (event.getEntity() instanceof ServerPlayer placer) {
+            Achievements.award(level, placer, Achievements.BE_GONE);
+        } else {
+            Achievements.awardNear(level, pos.getX(), pos.getZ(), 64.0, Achievements.BE_GONE);
         }
     }
 
@@ -105,10 +135,20 @@ public class ReduxMain {
 
         if (chunkPos == null) return;
 
-        if (!WorldData.Outpost.isOutpostBurnt(level, chunkPos)) return;
+        if (WorldData.Outpost.isOutpostBurnt(level, chunkPos)) {
+            if (!event.isCanceled())
+                event.setCanceled(true);
+            return;
+        }
 
-        if (!event.isCanceled())
-            event.setCanceled(true);
+        if (event.loadedFromDisk()) return;
+
+        StructureStart start = WorldData.Outpost.getOutpostAt(level, mobSpawnPos);
+        if (!start.isValid()) return;
+        if (Mod.countPillagersAt(level, start) < Mod.OUTPOST_MAX_PILLAGERS) return;
+
+        event.setCanceled(true);
+        Mod.enqueuePillager(chunkPos, mobSpawnPos);
     }
 
     @SubscribeEvent
@@ -121,6 +161,8 @@ public class ReduxMain {
         if (dead instanceof ServerPlayer player) {
             onPlayerDeath(level, player);
         } else if (dead.getType() == EntityTypes.PILLAGER) {
+            Mod.onRetreaterKilled(level, dead.getUUID());
+            Mod.onEscapeeKilled(level, dead.getUUID());
             onPillagerDeath(level, dead);
         }
     }
@@ -140,9 +182,9 @@ public class ReduxMain {
                 continue;
             }
 
-            Mod.beginRebuild(level, outpost,
+            Mod.sendBuilders(level, outpost,
                     player.getPlainTextName() + " died during active wave ("
-                            + outpost.getWavePillagerCount() + " wave pillagers still alive)");
+                            + outpost.getWavePillagerCount() + " soldiers still alive)");
         }
     }
 
@@ -150,17 +192,24 @@ public class ReduxMain {
         UUID id = pillager.getUUID();
 
         for (Outpost outpost : Mod.getBurntOutposts()) {
-            if (!outpost.isWavePillager(id)) continue;
+            if (!outpost.isWavePillager(id) && !outpost.isBuilder(id)) continue;
 
             if (outpost.isRebuilding()) {
-                outpost.removeWavePillager(id);
-                int builders = outpost.getWavePillagerCount();
+                if (outpost.isBuilder(id)) {
+                    outpost.removeBuilder(id);
+                    int builders = outpost.getBuilderCount();
 
-                Debug.Log("Builder pillager killed at Outpost " + outpost.getUuid() + ", " + builders + " builders left");
+                    Debug.Log("Builder killed at Outpost " + outpost.getUuid() + ", " + builders + " builders left");
 
-                if (builders == 0) {
-                    Mod.haltRebuild(level, outpost, "all builders killed");
+                    if (builders == 0) {
+                        Mod.haltRebuild(level, outpost, "all builders killed");
+                    } else {
+                        Mod.save(level, outpost);
+                    }
                 } else {
+                    outpost.removeWavePillager(id);
+                    Debug.Log("Soldier killed during rebuild at Outpost " + outpost.getUuid()
+                            + ", " + outpost.getWavePillagerCount() + " soldiers left");
                     Mod.save(level, outpost);
                 }
                 return;
@@ -246,13 +295,16 @@ public class ReduxMain {
             processWaves(level);
         }
 
+        if (level.getGameTime() % 100L == 0L) {
+            Mod.processWaitLists(level);
+        }
+
         processRebuilds(level);
         Mod.tickRetreats(level);
     }
 
     @SubscribeEvent
     public static void onDayChange(DayChangeEvent event) {
-        Debug.Log("Day Changed to " + event.getDay());
         ServerLevel level = event.getLevel();
 
         long day = event.getDay();
@@ -261,7 +313,8 @@ public class ReduxMain {
             if (outpost.isRebuilding()) continue;
             if (outpost.isWaveActive()) continue;
             if (outpost.isWaveDue()) continue;
-            if (day - outpost.getConstructionQueueDate() < pillagerWaveAttackTimeDays) continue;
+            if (outpost.isConcluding()) continue;
+            if (day - outpost.getConstructionQueueDate() < outpost.getWaveDelayDays()) continue;
 
             outpost.setWaveDue(true);
             Mod.save(level, outpost);
@@ -286,6 +339,7 @@ public class ReduxMain {
             }
 
             if (!outpost.isWaveDue()) continue;
+            if (outpost.isConcluding()) continue;
 
             ChunkPos chunk = outpost.getChunkPos();
             if (!level.hasChunk(chunk.x(), chunk.z())) continue;
@@ -300,7 +354,6 @@ public class ReduxMain {
     }
 
     private static void processRebuilds(ServerLevel level) {
-        // copy: finishing a rebuild removes outpost from list
         for (Outpost outpost : new ArrayList<>(Mod.getBurntOutposts())) {
             if (!outpost.isRebuilding()) continue;
 

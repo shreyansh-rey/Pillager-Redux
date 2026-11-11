@@ -10,7 +10,9 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import com.yan.pillager_redux.main.Achievements;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
@@ -72,6 +74,46 @@ public class Devtools {
                                 .executes(context -> runRebuildTest(
                                         context.getSource(), IntegerArgumentType.getInteger(context, "percent"))))
                 ));
+
+        dispatcher.register(Commands.literal("PillagerRedux")
+                .then(Commands.literal("Grant")
+                        .then(Commands.literal("be_gone")
+                                .executes(context -> runAchievement(context.getSource(), Achievements.BE_GONE, true)))
+                        .then(Commands.literal("stay_gone")
+                                .executes(context -> runAchievement(context.getSource(), Achievements.STAY_GONE, true)))));
+
+        dispatcher.register(Commands.literal("PillagerRedux")
+                .then(Commands.literal("Revoke")
+                        .then(Commands.literal("be_gone")
+                                .executes(context -> runAchievement(context.getSource(), Achievements.BE_GONE, false)))
+                        .then(Commands.literal("stay_gone")
+                                .executes(context -> runAchievement(context.getSource(), Achievements.STAY_GONE, false)))));
+    }
+
+    private static int runAchievement(CommandSourceStack source, String name, boolean grant) {
+        ServerPlayer player = Objects.requireNonNull(source.getPlayer());
+        ServerLevel level = source.getLevel();
+
+        String msg;
+        int result = 1;
+
+        if (grant) {
+            int r = Achievements.award(level, player, name);
+            msg = switch (r) {
+                case 1 -> "Granted " + name;
+                case 2 -> "Granted " + name + " via chat fallback: advancement json is NOT loaded, check path and log.txt";
+                default -> "Already have " + name;
+            };
+            if (r == 0) result = 0;
+        } else {
+            boolean revoked = Achievements.revoke(level, player, name);
+            msg = revoked ? "Revoked " + name : "Nothing to revoke for " + name;
+            if (!revoked) result = 0;
+        }
+
+        String shown = msg;
+        source.sendSuccess(() -> Component.literal(shown), false);
+        return result;
     }
 
     private static int runRebuildTest(CommandSourceStack source, int wreckPercent) {
