@@ -1,5 +1,5 @@
 {
-  "parent": "minecraft:adventure/root",
+  "parent": "pillagerredux:root",
   "display": {
     "icon": { "id": "minecraft:flint_and_steel" },
     "title": { "text": "Be Gone!" },
