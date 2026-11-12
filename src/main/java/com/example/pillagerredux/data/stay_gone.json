@@ -1,0 +1,15 @@
+{
+  "parent": "pillagerredux:be_gone",
+  "display": {
+    "icon": { "id": "minecraft:shield" },
+    "title": { "text": "Stay Gone!" },
+    "description": { "text": "Defend against a reconquest raid" },
+    "frame": "goal",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "criterion": { "trigger": "minecraft:impossible" }
+  }
+}
